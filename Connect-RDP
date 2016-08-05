@@ -1,0 +1,113 @@
+################
+# - Function - #
+################
+function ListBox($FOREACH_HOST_LIST)
+{
+    [void] [System.Reflection.Assembly]::LoadWithPartialName("System.Windows.Forms")
+    [void] [System.Reflection.Assembly]::LoadWithPartialName("System.Drawing") 
+    
+    $objForm = New-Object System.Windows.Forms.Form 
+    $objForm.Text = "RDP自動接続"
+    $objForm.Size = New-Object System.Drawing.Size(300,200) 
+    $objForm.StartPosition = "CenterScreen"
+    
+    $objForm.KeyPreview = $True
+    $objForm.Add_KeyDown({if ($_.KeyCode -eq "Enter") 
+        {$x=$objListBox.SelectedIndex;$objForm.Close()}})
+    $objForm.Add_KeyDown({if ($_.KeyCode -eq "Escape") 
+        {$objForm.Close()}})
+    
+    $OKButton = New-Object System.Windows.Forms.Button
+    $OKButton.Location = New-Object System.Drawing.Size(75,120)
+    $OKButton.Size = New-Object System.Drawing.Size(75,23)
+    $OKButton.Text = "OK"
+    $OKButton.Add_Click({$x=$objListBox.SelectedIndex;$objForm.Close()})
+    $objForm.Controls.Add($OKButton)
+    
+    $CancelButton = New-Object System.Windows.Forms.Button
+    $CancelButton.Location = New-Object System.Drawing.Size(150,120)
+    $CancelButton.Size = New-Object System.Drawing.Size(75,23)
+    $CancelButton.Text = "Cancel"
+    $CancelButton.Add_Click({$objForm.Close()})
+    $objForm.Controls.Add($CancelButton)
+    
+    $objLabel = New-Object System.Windows.Forms.Label
+    $objLabel.Location = New-Object System.Drawing.Size(10,20) 
+    $objLabel.Size = New-Object System.Drawing.Size(280,20) 
+    $objLabel.Text = "接続先のコンピュータを選択してください:"
+    $objForm.Controls.Add($objLabel) 
+    
+    $objListBox = New-Object System.Windows.Forms.ListBox 
+    $objListBox.Location = New-Object System.Drawing.Size(10,40) 
+    $objListBox.Size = New-Object System.Drawing.Size(260,20) 
+    $objListBox.Height = 80
+    
+    Foreach($i in $FOREACH_HOST_LIST) {
+        [void] $objListBox.Items.Add($i)
+        }
+    
+    $objForm.Controls.Add($objListBox) 
+    $objForm.Topmost = $True
+    $objForm.Add_Shown({$objForm.Activate()})
+    [void] $objForm.ShowDialog()
+    
+    $x
+    }
+
+function RDPConnect($CONNECT_IP, $CONNECT_USER, $CONNECT_PASS)
+{   
+    # Cmdkey用に、接続先情報にポート番号が指定されている場合は除外する
+    $CMDKEY_CONNECT_IP = $CONNECT_IP | %{ $_.Split(":")[0]}
+    
+    Cmdkey.exe /generic:TERMSRV/"$CMDKEY_CONNECT_IP" /user:"$CONNECT_USER" /pass:"$CONNECT_PASS"
+    Start mstsc /v:$CONNECT_IP
+    Timeout 5
+    Cmdkey.exe /delete:TERMSRV/$CMDKEY_CONNECT_IP
+}
+
+############
+# - Main - #
+############
+
+# 『host.list』PATH取得
+$SCRIPT_PATH = Split-Path $myInvocation.MyCommand.path
+$LIST_FILE = Join-Path $SCRIPT_PATH "host.list"
+
+# 空配列の作成
+$HOST_NAME_LIST = @()
+$HOST_IP_LIST   = @()
+$HOST_USER_LIST = @()
+$HOST_PASS_LIST = @()
+
+# 『host.list』読込み
+Foreach ($i in Get-Content $LIST_FILE) {
+    # 空行・コメント行を無視する
+    If (($i -eq "") -Or ($i.substring(0,1) -eq "#")) {
+        Continue
+        }
+    
+    # 変数へ代入
+    $HOST_NAME      = $i | %{ $_.Split(",")[0]}
+    $HOST_IP        = $i | %{ $_.Split(",")[1]}
+    $HOST_USER      = $i | %{ $_.Split(",")[2]}
+    $HOST_PASS      = $i | %{ $_.Split(",")[3]}
+    
+    # 配列へ代入
+    $HOST_NAME_LIST = $HOST_NAME_LIST + $HOST_NAME
+    $HOST_IP_LIST   = $HOST_IP_LIST + $HOST_IP
+    $HOST_USER_LIST = $HOST_USER_LIST + $HOST_USER
+    $HOST_PASS_LIST = $HOST_PASS_LIST + $HOST_PASS
+    }
+
+# リストボックスを呼び出し、SeletedIndexを取得する
+$SELECT_INDEX_NO = ListBox($HOST_NAME_LIST)
+
+# 何も選択しなかった場合は処理を終了する
+If ($SELECT_INDEX_NO -eq $null) {
+    exit
+    }
+
+# RDP接続を行う
+RDPConnect $HOST_IP_LIST[$SELECT_INDEX_NO] `
+           $HOST_USER_LIST[$SELECT_INDEX_NO] `
+           $HOST_PASS_LIST[$SELECT_INDEX_NO]
